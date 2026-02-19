@@ -4,6 +4,7 @@
 /// Mirrors Swift's CppBridge extensions for structured output.
 library dart_bridge_structured_output;
 
+import 'dart:convert';
 import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
@@ -141,11 +142,32 @@ Remember: Output ONLY the JSON object, nothing else.
       if (startIndex == -1) continue;
 
       int depth = 0;
+      bool inString = false;
+      bool escaped = false;
       for (int i = startIndex; i < trimmed.length; i++) {
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (trimmed[i] == '\\' && inString) {
+          escaped = true;
+          continue;
+        }
+        if (trimmed[i] == '"') {
+          inString = !inString;
+          continue;
+        }
+        if (inString) continue;
         if (trimmed[i] == open) depth++;
         if (trimmed[i] == close) depth--;
         if (depth == 0) {
-          return trimmed.substring(startIndex, i + 1);
+          final candidate = trimmed.substring(startIndex, i + 1);
+          try {
+            jsonDecode(candidate);
+            return candidate;
+          } catch (_) {
+            break; // not valid JSON, try next opener type
+          }
         }
       }
     }
@@ -302,19 +324,22 @@ Remember: Output ONLY the JSON object, nothing else.
     try {
       // Simple JSON validation
       final trimmed = text.trim();
-      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-        return const StructuredOutputValidationResult(
-          isValid: true,
-          containsJSON: true,
-          error: null,
-        );
-      }
-      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-        return const StructuredOutputValidationResult(
-          isValid: true,
-          containsJSON: true,
-          error: null,
-        );
+      final extracted = _fallbackExtractJson(trimmed);
+      if (extracted != null) {
+        try {
+          jsonDecode(extracted); // validate with dart:convert
+          return const StructuredOutputValidationResult(
+            isValid: true,
+            containsJSON: true,
+            error: null,
+          );
+        } on FormatException catch (e) {
+          return StructuredOutputValidationResult(
+            isValid: false,
+            containsJSON: true, // JSON was found but malformed
+            error: e.message,
+          );
+        }
       }
       return const StructuredOutputValidationResult(
         isValid: false,

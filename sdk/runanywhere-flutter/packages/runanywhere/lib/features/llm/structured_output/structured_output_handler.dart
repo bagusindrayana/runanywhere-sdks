@@ -96,6 +96,7 @@ Remember: Output ONLY the JSON object, nothing else.
       throw StructuredOutputError.invalidJSON(
           'Invalid JSON format: ${e.message}');
     } catch (e) {
+      if (e is StructuredOutputError) rethrow;
       throw StructuredOutputError.invalidJSON(e.toString());
     }
   }
